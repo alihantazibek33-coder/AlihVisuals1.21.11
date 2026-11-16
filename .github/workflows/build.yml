@@ -41,7 +41,17 @@ jobs:
 
       - name: Build
         working-directory: ${{ steps.find.outputs.dir }}
-        run: gradle build --stacktrace --no-daemon
+        run: gradle build --no-daemon --console=plain 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
+
+      - name: Show only errors
+        if: failure()
+        run: |
+          {
+            echo '## Build errors'
+            echo '```'
+            grep -n -E "error:|What went wrong|Execution failed|Caused by|cannot find symbol|package .* does not exist" /tmp/build.log | head -60
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Copy jar
         run: |
