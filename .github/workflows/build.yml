@@ -1,47 +1,56 @@
-name: AlihVisuals Build
+name: build
 
-'on':
-workflow_dispatch:
-push:
-branches:
-- main
-- master
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: write   # тек v* тегінде Release-ке jar тіркеу үшін
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-build:
-runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
-  - name: Setup Java 21
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.2.0
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
-  - name: Setup Gradle
-    uses: gradle/actions/setup-gradle@v4
-    with:
-      gradle-version: '9.2.1'
+      - name: Build
+        run: gradle build --stacktrace --no-daemon
 
-  - name: Extract ZIP
-    run: |
-      unzip -q AlihVisuals.zip -d extracted
-      find extracted -name build.gradle -o -name build.gradle.kts
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: AlihVisuals-jar
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+          if-no-files-found: error
 
-  - name: Build Mod
-    run: |
-      DIR=$(dirname "$(find extracted -name build.gradle -o -name build.gradle.kts | head -n 1)")
-      gradle -p "$DIR" clean build
-
-  - name: Upload JAR
-    uses: actions/upload-artifact@v4
-    with:
-      name: AlihVisuals-Build
-      path: extracted/**/build/libs/*.jar
-      if-no-files-found: error
+      - name: Attach jar to the release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+          generate_release_notes: true
