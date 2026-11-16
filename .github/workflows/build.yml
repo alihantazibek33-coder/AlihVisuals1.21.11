@@ -39,19 +39,40 @@ jobs:
         with:
           gradle-version: 9.2.0
 
+      - name: Init script (show all compile errors)
+        run: |
+          cat > /tmp/init.gradle <<'EOF'
+          allprojects {
+            tasks.withType(JavaCompile).configureEach {
+              options.compilerArgs += ['-Xmaxerrs', '5000', '-Xmaxwarns', '0']
+            }
+          }
+          EOF
+
       - name: Build
         working-directory: ${{ steps.find.outputs.dir }}
-        run: gradle build --no-daemon --console=plain 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
+        run: gradle build --no-daemon --console=plain -I /tmp/init.gradle 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
 
-      - name: Show only errors
-        if: failure()
+      - name: Collect errors
+        if: always()
         run: |
+          grep -E "error:|What went wrong" -A2 /tmp/build.log > /tmp/errors.txt || true
           {
             echo '## Build errors'
+            echo "Errors: $(grep -c 'error:' /tmp/build.log || true)"
             echo '```'
-            grep -n -E "error:|What went wrong|Execution failed|Caused by|cannot find symbol|package .* does not exist" /tmp/build.log | head -60
+            grep -E "error:" /tmp/build.log | sed 's#/tmp/proj/src/main/java/kz/alih/visuals/##' | head -40
             echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            /tmp/build.log
+            /tmp/errors.txt
 
       - name: Copy jar
         run: |
